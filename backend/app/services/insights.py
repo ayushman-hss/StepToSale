@@ -110,7 +110,8 @@ def generate_insights(df: pd.DataFrame) -> List[Dict[str, str]]:
             "kind": "observation",
             "text": (
                 f"Footfall peaks at {peak_ff['hour']}:00 but sales peak at "
-                f"{peak_sales['hour']}:00 — a {abs(lag)}-hour gap. "
+                f"{peak_sales['hour']}:00 — a{'n' if abs(lag) in (8, 11, 18) else ''} "
+                f"{abs(lag)}-hour gap. "
                 f"People browse early and buy late."
             ),
         })

@@ -22,6 +22,10 @@ def hourly_series(df: pd.DataFrame) -> List[Dict]:
         transactions=("transactions", "sum"),
     )
     full = pd.DataFrame({"hour": range(24)}).merge(g, on="hour", how="left").fillna(0)
+    # The left join turns counts into floats for the missing hours, which then
+    # reach the insight text as "20.0 people walk in".
+    full["footfall"] = full["footfall"].astype(int)
+    full["transactions"] = full["transactions"].astype(int)
     full["conversion"] = full.apply(
         lambda r: (r["transactions"] / r["footfall"]) if r["footfall"] else 0.0, axis=1
     )

@@ -70,17 +70,33 @@ def pick_pair(rules):
 # 4. Store profiles — S1 neighbourhood kirana, S2 station kiosk
 # ----------------------------------------------------------------------
 STORES = {
+    # A residential kirana: steady all day, busiest mid-morning and after
+    # work, and busier still at the weekend when people do a bigger shop.
     "S1": {
         "tx_per_day": 45,
         "pairing_bias": 0.55,
-        "peak_hours": [9, 10, 11, 12, 17, 18, 19, 20],
+        "open_hours": list(range(8, 22)),
+        "peak_hours": [9, 10, 11, 18, 19, 20],
+        # Mon..Sun
+        "day_factor": [1.00, 0.88, 0.98, 1.05, 1.15, 1.40, 1.30],
     },
+    # A kiosk by the station: commuter rushes either side of the working
+    # day, and it empties out at the weekend when nobody is commuting.
     "S2": {
         "tx_per_day": 70,
         "pairing_bias": 0.40,
-        "peak_hours": [7, 8, 9, 10, 18, 19, 20, 21],
+        "open_hours": list(range(6, 23)),
+        "peak_hours": [7, 8, 9, 18, 19, 20, 21],
+        "day_factor": [1.22, 1.20, 1.15, 1.20, 1.28, 0.58, 0.42],
     },
 }
+
+
+def pick_hour(profile) -> int:
+    """Trade happens all day; peaks are weighted, not exclusive."""
+    hours = profile["open_hours"]
+    weights = [3.2 if h in profile["peak_hours"] else 1.0 for h in hours]
+    return random.choices(hours, weights=weights, k=1)[0]
 
 
 # ----------------------------------------------------------------------
@@ -98,9 +114,12 @@ for store_code, profile in STORES.items():
     tx_id = 1
 
     for day in range(7):
-        date = (start + timedelta(days=day)).strftime("%Y-%m-%d")
-        for _ in range(profile["tx_per_day"]):
-            hour = random.choice(profile["peak_hours"])
+        current = start + timedelta(days=day)
+        date = current.strftime("%Y-%m-%d")
+        factor = profile["day_factor"][current.weekday()]
+        tx_today = max(1, round(profile["tx_per_day"] * factor * random.uniform(0.9, 1.1)))
+        for _ in range(tx_today):
+            hour = pick_hour(profile)
 
             if random.random() < profile["pairing_bias"]:
                 sku_a, sku_b = pick_pair(rules)
