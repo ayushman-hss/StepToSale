@@ -5,6 +5,7 @@ from sqlmodel import SQLModel
 
 from app.config import settings
 from app import models  # noqa: F401  -- registers models on metadata
+from app import models_pooling  # noqa: F401  -- pooling tables
 
 config = context.config
 config.set_main_option("sqlalchemy.url", settings.database_url)

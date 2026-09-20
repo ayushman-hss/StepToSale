@@ -25,3 +25,47 @@ class HourlyData(SQLModel, table=True):
     footfall: int
     transactions: int
     sales: float
+
+class Product(SQLModel, table=True):
+    __tablename__ = "product"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    store_id: int = Field(foreign_key="store.id", index=True)
+    sku: str = Field(index=True)
+    name: str
+    cost_price: float
+    sell_price: float
+
+
+class SaleLine(SQLModel, table=True):
+    __tablename__ = "sale_line"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    store_id: int = Field(foreign_key="store.id", index=True)
+    upload_id: int = Field(foreign_key="upload.id", index=True)
+    date: str = Field(index=True)
+    hour: int
+    transaction_id: str = Field(index=True)
+    sku: str = Field(index=True)
+    qty: int
+    unit_price: float
+
+
+class BundleSuggestion(SQLModel, table=True):
+    __tablename__ = "bundle_suggestion"
+    id: Optional[int] = Field(default=None, primary_key=True)
+    store_id: int = Field(foreign_key="store.id", index=True)
+    sku_a: str
+    sku_b: str
+    transactions_with_both: int
+    transactions_with_a: int
+    transactions_with_b: int
+    total_transactions: int
+    confidence: float
+    lift: float
+    separate_price: float
+    separate_cost: float
+    suggested_price: float
+    suggested_margin_pct: float
+    margin_floor_pct: float
+    status: str = Field(default="pending")
+    approved_price: Optional[float] = None
+    created_at: datetime = Field(default_factory=datetime.utcnow)

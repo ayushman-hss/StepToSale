@@ -1,6 +1,7 @@
 import { useEffect, useRef } from 'react';
 import * as echarts from 'echarts';
 import type { HourlyPoint } from '../types';
+import { CHART, baseOption, categoryAxis, valueAxis } from '../lib/charts/theme';
 
 export function FootfallSalesChart({ data }: { data: HourlyPoint[] }) {
   const ref = useRef<HTMLDivElement>(null);
@@ -10,7 +11,6 @@ export function FootfallSalesChart({ data }: { data: HourlyPoint[] }) {
     if (!ref.current) return;
     const chart = echarts.init(ref.current);
     chartRef.current = chart;
-
     const onResize = () => chart.resize();
     window.addEventListener('resize', onResize);
     return () => {
@@ -23,69 +23,92 @@ export function FootfallSalesChart({ data }: { data: HourlyPoint[] }) {
     const chart = chartRef.current;
     if (!chart || !data.length) return;
 
-    const nonEmpty = data.filter((d) => d.footfall > 0);
-    const peak = nonEmpty.reduce(
-      (a, b) => (b.footfall > a.footfall ? b : a),
-      nonEmpty[0] ?? data[0]
-    );
+    const busy = data.filter((d) => d.footfall > 0);
+    const peak = busy.reduce((a, b) => (b.footfall > a.footfall ? b : a), busy[0] ?? data[0]);
 
-    chart.setOption({
-      tooltip: {
-        trigger: 'axis',
-        formatter: (params: any) => {
-          const p = params[0];
-          const row = data[p.dataIndex];
-          return `
-            <div style="font-size:12px">
-              <b>${row.hour}:00</b><br/>
-              Footfall: ${row.footfall}<br/>
-              Sales: ₹${row.sales.toLocaleString('en-IN')}<br/>
-              Conversion: ${(row.conversion * 100).toFixed(1)}%
-            </div>`;
+    chart.setOption(
+      {
+        ...baseOption({ left: 44, right: 50 }),
+        tooltip: {
+          ...baseOption().tooltip,
+          formatter: (params: unknown) => {
+            const p = (params as { dataIndex: number }[])[0];
+            const row = data[p.dataIndex];
+            return `<b>${row.hour}:00</b><br/>${row.footfall} visitors<br/>₹${row.sales.toLocaleString(
+              'en-IN',
+            )} sales<br/>${(row.conversion * 100).toFixed(1)}% bought`;
+          },
         },
+        xAxis: categoryAxis(data.map((d) => `${d.hour}:00`)),
+        yAxis: [
+          valueAxis(),
+          valueAxis({
+            position: 'right',
+            splitLine: { show: false },
+            axisLabel: {
+              color: CHART.muted,
+              fontSize: 11.5,
+              fontFamily: CHART.font,
+              formatter: (v: number) => `₹${(v / 1000).toFixed(0)}k`,
+            },
+          }),
+        ],
+        series: [
+          {
+            name: 'Visitors',
+            type: 'bar',
+            data: data.map((d) => d.footfall),
+            itemStyle: { color: CHART.boardTint, borderRadius: [3, 3, 0, 0] },
+            // Brass marks the window worth noticing -- the same meaning it
+            // carries on every threshold bar in the app.
+            markArea: peak
+              ? {
+                  silent: true,
+                  itemStyle: { color: CHART.brassWash },
+                  label: {
+                    show: true,
+                    position: 'insideTop',
+                    color: CHART.brassDeep,
+                    fontFamily: CHART.font,
+                    fontSize: 11.5,
+                    fontWeight: 600,
+                    formatter: 'busiest',
+                  },
+                  data: [
+                    [{ xAxis: `${peak.hour - 1}:00` }, { xAxis: `${peak.hour + 1}:00` }],
+                  ],
+                }
+              : undefined,
+          },
+          {
+            name: 'Sales',
+            type: 'line',
+            yAxisIndex: 1,
+            data: data.map((d) => d.sales),
+            smooth: true,
+            symbol: 'none',
+            lineStyle: { width: 2.5, color: CHART.board },
+            itemStyle: { color: CHART.board },
+          },
+        ],
       },
-      legend: { data: ['Footfall', 'Sales'], top: 0 },
-      grid: { left: 50, right: 60, top: 40, bottom: 30 },
-      xAxis: {
-        type: 'category',
-        data: data.map((d) => `${d.hour}:00`),
-        axisLabel: { fontSize: 11 },
-      },
-      yAxis: [
-        { type: 'value', name: 'Footfall', position: 'left' },
-        {
-          type: 'value',
-          name: 'Sales (₹)',
-          position: 'right',
-          axisLabel: { formatter: (v: number) => `₹${(v / 1000).toFixed(0)}k` },
-        },
-      ],
-      series: [
-        {
-          name: 'Footfall',
-          type: 'bar',
-          data: data.map((d) => d.footfall),
-          itemStyle: { color: '#94a3b8', borderRadius: [4, 4, 0, 0] },
-          markArea: peak
-            ? {
-                silent: true,
-                itemStyle: { color: 'rgba(251, 191, 36, 0.15)' },
-                data: [[{ xAxis: `${peak.hour - 1}:00` }, { xAxis: `${peak.hour + 1}:00` }]],
-              }
-            : undefined,
-        },
-        {
-          name: 'Sales',
-          type: 'line',
-          yAxisIndex: 1,
-          data: data.map((d) => d.sales),
-          smooth: true,
-          lineStyle: { width: 3, color: '#0ea5e9' },
-          itemStyle: { color: '#0ea5e9' },
-        },
-      ],
-    });
+      true,
+    );
   }, [data]);
 
-  return <div ref={ref} className="h-80 w-full" />;
+  return (
+    <div>
+      <div ref={ref} className="h-72 w-full md:h-80" />
+      <p className="mt-2 flex flex-wrap items-center gap-x-5 gap-y-1 text-small text-muted">
+        <span className="inline-flex items-center gap-2">
+          <span className="h-2.5 w-4 rounded-[2px] bg-board-tint" aria-hidden />
+          visitors
+        </span>
+        <span className="inline-flex items-center gap-2">
+          <span className="h-0.5 w-4 rounded-full bg-board" aria-hidden />
+          sales
+        </span>
+      </p>
+    </div>
+  );
 }

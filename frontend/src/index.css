@@ -1,1 +1,131 @@
+/* StepToSales design system
+ *
+ * Anchor: the enamel shop signboard -- saturated deep ground, thick legible
+ * lettering, warm yellow. Built for reading at distance, which is what a
+ * shopkeeper glancing at a phone in daylight actually needs.
+ *
+ * Organising idea: the threshold. Every feature answers "are you above the
+ * line?" -- conversion vs your average, margin vs your floor, volume vs the
+ * next price tier. The ThresholdBar component is where all the boldness goes.
+ */
+@import url("https://fonts.googleapis.com/css2?family=Anek+Latin:wght@400;500;600;700;800&display=swap");
 @import "tailwindcss";
+
+@theme {
+  /* --- colour ------------------------------------------------------ */
+  /* Ink is for text only. It never fills a button -- that would create a
+     second candidate for "primary action" alongside board, which is how the
+     green/black inconsistency crept in before. */
+  --color-ink: #12211e;
+  --color-muted: #5c6b66;
+
+  /* Board is brand AND confirm AND positive money, deliberately collapsed
+     into one value so those three can never drift apart. 7.9:1 on white. */
+  --color-board: #0b5c4e;
+  --color-board-deep: #063b32;
+  --color-board-tint: #e7efec;
+
+  /* Chalk: cool green-grey off-white. Not cream. */
+  --color-chalk: #f6f7f4;
+  --color-rule: #dde2dc;
+
+  /* Brass marks opportunity, never decoration. It fails contrast as text on
+     white (2.2:1), so it is a FILL ONLY -- brass-deep is its text form. */
+  --color-brass: #e8a317;
+  --color-brass-deep: #8a5b00;
+  --color-brass-tint: #fdf3dd;
+
+  /* Clay marks problems only. Never good news. */
+  --color-clay: #b3402b;
+  --color-clay-tint: #fbeeeb;
+
+  /* --- type -------------------------------------------------------- */
+  /* Anek Latin (Ek Type) has matched Devanagari, Kannada, Tamil siblings on
+     the same skeleton, so localising does not change the identity. One
+     variable family keeps the payload small for patchy mobile data. */
+  --font-sans: "Anek Latin", ui-sans-serif, system-ui, -apple-system, sans-serif;
+
+  --text-figure: 2.75rem;
+  --text-figure--line-height: 1;
+  --text-figure--letter-spacing: -0.02em;
+  --text-figure--font-weight: 700;
+
+  --text-title: 1.5rem;
+  --text-title--line-height: 1.2;
+  --text-title--font-weight: 600;
+
+  --text-heading: 1rem;
+  --text-heading--line-height: 1.35;
+  --text-heading--font-weight: 600;
+
+  --text-body: 0.9375rem; /* 15px -- larger than a typical UI base, on purpose */
+  --text-body--line-height: 1.55;
+
+  --text-small: 0.84375rem; /* 13.5px */
+  --text-small--line-height: 1.45;
+
+  --text-fine: 0.78125rem; /* 12.5px -- hard floor, badges only */
+  --text-fine--line-height: 1.35;
+
+  /* --- shape ------------------------------------------------------- */
+  /* Radius encodes hierarchy instead of being uniform. */
+  --radius-section: 4px; /* page surfaces */
+  --radius-item: 10px; /* things you act on */
+  --radius-control: 8px; /* buttons, inputs */
+  --radius-track: 2px; /* the threshold bar */
+}
+
+@layer base {
+  html {
+    -webkit-text-size-adjust: 100%;
+  }
+
+  body {
+    background: var(--color-chalk);
+    color: var(--color-ink);
+    font-family: var(--font-sans);
+    font-size: var(--text-body);
+    line-height: 1.55;
+    -webkit-font-smoothing: antialiased;
+  }
+
+  /* Money and quantities must not jitter when a value updates in place --
+     the group-buying table rewrites itself on every order. */
+  table,
+  .tnum {
+    font-variant-numeric: tabular-nums;
+  }
+
+  /* Always visible, never removed. */
+  :focus-visible {
+    outline: 2px solid var(--color-board);
+    outline-offset: 2px;
+    border-radius: 3px;
+  }
+
+  ::selection {
+    background: var(--color-brass-tint);
+  }
+}
+
+@layer utilities {
+  /* Bottom tab bar clearance on mobile. */
+  .pb-nav {
+    padding-bottom: calc(4.5rem + env(safe-area-inset-bottom));
+  }
+
+  @media (min-width: 768px) {
+    .pb-nav {
+      padding-bottom: 3rem;
+    }
+  }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  *,
+  *::before,
+  *::after {
+    animation-duration: 0.01ms !important;
+    transition-duration: 0.01ms !important;
+  }
+}

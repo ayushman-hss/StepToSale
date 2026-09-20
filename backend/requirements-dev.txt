@@ -1,0 +1,4 @@
+# Test-only dependencies. Kept separate from requirements.txt until the
+# pooling feature is merged.
+pytest>=8
+hypothesis>=6

@@ -3,8 +3,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 
 from .db import init_db
-from .routers import dashboard
-
+from .routers import dashboard, products, bundles, pools
 
 @asynccontextmanager
 async def lifespan(app: FastAPI):
@@ -23,9 +22,12 @@ app.add_middleware(
     allow_headers=["*"],
 )
 
-app.include_router(dashboard.router)
-
 
 @app.get("/")
 def root():
     return {"status": "ok", "docs": "/docs"}
+
+app.include_router(dashboard.router)
+app.include_router(products.router)
+app.include_router(bundles.router)
+app.include_router(pools.router)

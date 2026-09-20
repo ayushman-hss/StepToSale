@@ -49,3 +49,37 @@ class DashboardResponse(BaseModel):
     insights: List[Insight] 
     whatsapp: str
     heatmap: List[HeatmapPoint]
+
+class ProductIn(BaseModel):
+    sku: str
+    name: str
+    cost_price: float
+    sell_price: float
+
+
+class ProductOut(ProductIn):
+    id: int
+    margin_pct: float
+
+
+class BundleSuggestionOut(BaseModel):
+    id: int
+    sku_a: str
+    sku_b: str
+    name_a: str
+    name_b: str
+    transactions_with_both: int
+    total_transactions: int
+    confidence: float
+    lift: float
+    separate_price: float
+    separate_margin_pct: float
+    suggested_price: float
+    suggested_margin_pct: float
+    margin_floor_pct: float
+    status: str
+    approved_price: Optional[float]
+
+
+class BundleActionIn(BaseModel):
+    price: Optional[float] = None
