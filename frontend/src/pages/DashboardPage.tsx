@@ -17,10 +17,30 @@ import {
   UploadButton,
 } from '../lib/ui/controls';
 
+/** "2026-09-21T20" -> "today, 20:00" / "yesterday, 21:00" / "Fri 18 Sep". */
+function freshness(through: string | null): string | null {
+  if (!through) return null;
+  const [day, hour] = through.split('T');
+  const now = new Date();
+  const iso = (d: Date) =>
+    `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}-${String(d.getDate()).padStart(2, '0')}`;
+  const yesterday = new Date(now);
+  yesterday.setDate(now.getDate() - 1);
+  if (day === iso(now)) return `today, up to the ${Number(hour)}:00 hour`;
+  if (day === iso(yesterday)) return 'yesterday';
+  const d = new Date(`${day}T00:00:00`);
+  return d.toLocaleDateString('en-IN', { weekday: 'short', day: 'numeric', month: 'short' });
+}
+
+const NO_DATA = 'No data for the given filters';
+
+/** Hourly charts show an average day once the range is longer than one. */
+const avgDay = (days: number) => (days > 1 ? ', on an average day' : '');
+
 export function DashboardPage() {
   const {
-    data, loading, error, storeId, startDate, endDate,
-    setData, setStores, setLoading, setError,
+    data, loading, error, storeId, startDate, endDate, preset,
+    setData, setStores, setLoading, setError, setPreset,
   } = useDashboard();
 
   const load = useCallback(async () => {
@@ -38,8 +58,11 @@ export function DashboardPage() {
       setData(d);
       setStores(s);
     } catch (e) {
-      setError(e instanceof Error ? e.message : 'Unknown error');
+      const msg = e instanceof Error ? e.message : 'Unknown error';
+      // An empty period is not an error -- nothing has been sold yet.
+      setError(msg === NO_DATA ? null : msg);
       setData(null);
+      setStores(await fetchStores().catch(() => []));
     } finally {
       setLoading(false);
     }
@@ -78,26 +101,57 @@ export function DashboardPage() {
         {error && <Notice>{error}</Notice>}
 
         {!data && !loading && !error && (
-          <EmptyState title="Nothing to show yet">
-            Upload a file with your hourly visitors, bills and sales to get started.
+          <EmptyState
+            title={
+              preset === 'today'
+                ? 'No bills recorded yet today'
+                : 'Nothing recorded for this period'
+            }
+          >
+            {preset === 'today' ? (
+              <p>
+                The shop may not have opened yet.{' '}
+                <button
+                  onClick={() => setPreset('yesterday')}
+                  className="font-medium text-board underline underline-offset-2"
+                >
+                  See yesterday
+                </button>
+              </p>
+            ) : (
+              <p>Choose another period, or upload a file with your hourly visitors and sales.</p>
+            )}
           </EmptyState>
         )}
 
         {data && (
           <>
-            <KpiCards kpis={data.kpis} hourly={data.hourly} />
+            {freshness(data.data_through) && (
+              <p className="text-small text-muted">
+                Latest bills: {freshness(data.data_through)}
+              </p>
+            )}
 
-            <Section title="Visitors and sales, hour by hour">
+            <KpiCards
+              kpis={data.kpis}
+              hourly={data.hourly}
+              period={data.period}
+              compare={data.compare}
+            />
+
+            <Section title={`Visitors and sales, hour by hour${avgDay(data.period.days)}`}>
               <FootfallSalesChart data={data.hourly} />
             </Section>
 
-            <Section title="Share who bought, hour by hour">
+            <Section title={`Share who bought, hour by hour${avgDay(data.period.days)}`}>
               <ConversionChart data={data.hourly} />
             </Section>
 
-            <Section title="Busiest times of the week">
-              <Heatmap data={data.heatmap} />
-            </Section>
+            {data.period.days >= 7 && (
+              <Section title="Busiest times of the week, on an average week">
+                <Heatmap data={data.heatmap} />
+              </Section>
+            )}
 
             <InsightCards insights={data.insights} />
 

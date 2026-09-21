@@ -7,6 +7,7 @@ export interface Kpis {
   sales_per_visitor: number;
 }
 
+/** An hour of the AVERAGE day when the range is longer than one day. */
 export interface HourlyPoint {
   hour: number;
   footfall: number;
@@ -28,13 +29,36 @@ export interface Insight {
   text: string;
 }
 
+export interface Period {
+  start: string;
+  end: string;
+  days: number;
+  /** The range ends on a day still in progress (today). */
+  partial: boolean;
+  label: string;
+}
+
+/** The same weekday a week earlier, cut at the same hour. */
+export interface Comparison {
+  date: string;
+  label: string;
+  through_hour: number;
+  footfall: number;
+  transactions: number;
+  sales: number;
+}
+
 export interface DashboardData {
   kpis: Kpis;
   hourly: HourlyPoint[];
   daily: DailyPoint[];
-  insights: Insight[];  
+  insights: Insight[];
   whatsapp: string;
   heatmap: HeatmapPoint[];
+  period: Period;
+  /** Latest date and hour held for this shop, e.g. "2026-09-21T20". */
+  data_through: string | null;
+  compare: Comparison | null;
 }
 
 export interface Store {

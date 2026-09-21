@@ -34,9 +34,12 @@ export function FootfallSalesChart({ data }: { data: HourlyPoint[] }) {
           formatter: (params: unknown) => {
             const p = (params as { dataIndex: number }[])[0];
             const row = data[p.dataIndex];
-            return `<b>${row.hour}:00</b><br/>${row.footfall} visitors<br/>₹${row.sales.toLocaleString(
-              'en-IN',
-            )} sales<br/>${(row.conversion * 100).toFixed(1)}% bought`;
+            // Over several days these are averages, so 11.4 visitors is real.
+            const n = (v: number) =>
+              Number.isInteger(v) ? v.toLocaleString('en-IN') : v.toFixed(1);
+            return `<b>${row.hour}:00</b><br/>${n(row.footfall)} visitors<br/>₹${Math.round(
+              row.sales,
+            ).toLocaleString('en-IN')} sales<br/>${(row.conversion * 100).toFixed(1)}% bought`;
           },
         },
         xAxis: categoryAxis(data.map((d) => `${d.hour}:00`)),
@@ -49,7 +52,12 @@ export function FootfallSalesChart({ data }: { data: HourlyPoint[] }) {
               color: CHART.muted,
               fontSize: 11.5,
               fontFamily: CHART.font,
-              formatter: (v: number) => `₹${(v / 1000).toFixed(0)}k`,
+              // Keep a decimal when needed: one day's hourly sales are small
+              // enough that whole thousands print "₹3k, ₹3k" for 2,500 and 3,000.
+              formatter: (v: number) =>
+                v >= 1000
+                  ? `₹${(v / 1000).toFixed(v % 1000 === 0 ? 0 : 1)}k`
+                  : `₹${Math.round(v)}`,
             },
           }),
         ],
