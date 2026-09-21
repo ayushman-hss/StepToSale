@@ -33,7 +33,10 @@ def generate_insights(df: pd.DataFrame, partial_date: str | None = None) -> List
         return insights
 
     k = compute_kpis(df)
-    avg_conv = sum(h["conversion"] for h in non_empty) / len(non_empty)
+    # The one honest average: all bills over all visitors, the same figure the
+    # dashboard headline shows. A mean of hourly rates is inflated by quiet
+    # hours where two visitors both bought, and would contradict the headline.
+    avg_conv = k["conversion_rate"]
 
     peak_ff = max(non_empty, key=lambda h: h["footfall"])
     peak_sales = max(non_empty, key=lambda h: h["sales"])
@@ -73,7 +76,11 @@ def generate_insights(df: pd.DataFrame, partial_date: str | None = None) -> List
     # ------------------------------------------------------------------
     # 3. OPPORTUNITY: best conversion hour is not your busiest
     # ------------------------------------------------------------------
-    if best_conv["hour"] != peak_ff["hour"]:
+    # Only name a "best hour" that actually beats the average. In a real shop
+    # the busy hours often convert worst (queues, browsers), so the best
+    # busy hour can sit below the overall rate -- calling it "best" then
+    # would contradict the headline.
+    if best_conv["hour"] != peak_ff["hour"] and best_conv["conversion"] > avg_conv * 1.05:
         insights.append({
             "kind": "opportunity",
             "text": (

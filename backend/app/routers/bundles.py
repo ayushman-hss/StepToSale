@@ -8,7 +8,11 @@ from ..models import Store, Upload, SaleLine, Product, BundleSuggestion
 from ..schemas import BundleSuggestionOut, BundleActionIn
 from ..services.parser import parse_sales_lines
 from ..services.bundles import generate_suggestions
-from ..services.associations import default_min_support
+from ..services.associations import (
+    DEFAULT_MIN_LIFT,
+    default_min_support,
+    multi_item_baskets,
+)
 
 router = APIRouter(prefix="/api/bundles", tags=["bundles"])
 
@@ -66,7 +70,7 @@ def generate(
     store_id: str,
     margin_floor_pct: float = Query(0.15, ge=0.0, lt=1.0),
     min_support_tx: int | None = Query(None, ge=1),
-    min_lift: float = Query(1.3, gt=0.0),
+    min_lift: float = Query(DEFAULT_MIN_LIFT, gt=0.0),
     session: Session = Depends(get_session),
 ):
     store = session.exec(select(Store).where(Store.code == store_id)).first()
@@ -102,7 +106,7 @@ def generate(
     effective_support = (
         min_support_tx
         if min_support_tx is not None
-        else default_min_support(df["basket_id"].nunique())
+        else default_min_support(multi_item_baskets(df))
     )
     stats: dict = {}
     suggestions = generate_suggestions(

@@ -14,6 +14,12 @@ neighbourhood retail rather than noise:
                    stock-up at the kirana: more bills and more rice and oil
                    bought two at a time
 * day to day    -- no two days are alike even with the same weekday
+* price         -- cheap everyday goods sell many times a day, expensive
+                   ones rarely: purchase frequency falls with price, so a
+                   perfume cannot out-earn the rice
+* format        -- each shop sells like what it is: the kirana leans on
+                   staples and dairy, the station kiosk on snacks, drinks
+                   and biscuits, and almost never sells rice or detergent
 * affinities    -- a few specific products are bought together far more
                    than chance (this biscuit with that tea), with a long
                    tail of weak pairings behind them. That skew is what
@@ -41,8 +47,22 @@ WEEKS = 12
 
 # Share of two-item bills that are one of the shop's signature pairings; the
 # rest are random pairs within the category rules.
-SIGNATURE_SHARE = 0.25
+SIGNATURE_SHARE = 0.15
 SIGNATURE_PAIRS = 6
+
+# How strongly purchase frequency falls with price: weight = price ** -e.
+# Necessities barely respond -- a family buys rice every week whatever it
+# costs -- while discretionary goods respond strongly, so a Rs4,000 perfume
+# sells rarely instead of out-earning the whole shop.
+ELASTICITY = {
+    "Foodgrains, Oil & Masala": 0.3,
+    "Bakery, Cakes & Dairy": 0.5,
+    "Cleaning & Household": 0.5,
+    "Beverages": 0.7,
+    "Snacks & Branded Foods": 0.8,
+    "Beauty & Hygiene": 1.1,
+}
+DEFAULT_ELASTICITY = 0.8
 
 # Categories a household buys in bulk at month start.
 STAPLES = {"Foodgrains, Oil & Masala", "Cleaning & Household"}
@@ -62,33 +82,65 @@ STORES = {
     # work, busier at the weekend, and strongly tied to the salary cycle.
     "S1": {
         "tx_per_day": 45,
-        "pairing_bias": 0.55,
+        # Items per bill. A kirana visit is often a household top-up of
+        # several things -- the main reason its bills are larger.
+        "basket_sizes": {1: 0.30, 2: 0.25, 3: 0.19, 4: 0.12, 5: 0.08, 6: 0.06},
         "open_hours": list(range(8, 22)),
         "peak_hours": [9, 10, 11, 18, 19, 20],
         "day_factor": [1.00, 0.88, 0.98, 1.05, 1.15, 1.40, 1.30],  # Mon..Sun
         "salary_effect": True,
+        # Share of single-item bills by category.
+        "category_mix": {
+            "Foodgrains, Oil & Masala": 0.28,
+            "Bakery, Cakes & Dairy": 0.22,
+            "Snacks & Branded Foods": 0.18,
+            "Beverages": 0.14,
+            "Cleaning & Household": 0.10,
+            "Beauty & Hygiene": 0.08,
+        },
+        "rules": RAW_RULES,
     },
     # A kiosk by the station: commuter rushes either side of the working
     # day, near-empty at the weekend. People buy singles on the way past,
     # so the month cycle barely touches it.
     "S2": {
         "tx_per_day": 70,
-        "pairing_bias": 0.40,
+        # Mostly a single item grabbed on the way past.
+        "basket_sizes": {1: 0.62, 2: 0.30, 3: 0.08},
+        # Every purchase here is a small impulse buy, so price bites harder
+        # than at the kirana: elasticities are scaled up by this factor.
+        "price_sensitivity": 1.6,
         "open_hours": list(range(6, 23)),
         "peak_hours": [7, 8, 9, 18, 19, 20, 21],
         "day_factor": [1.22, 1.20, 1.15, 1.20, 1.28, 0.58, 0.42],
         "salary_effect": False,
+        # Grab-and-go: tea, snacks, water, biscuits. Staples and detergent
+        # are near-absent -- nobody carries rice onto a train.
+        "category_mix": {
+            "Snacks & Branded Foods": 0.36,
+            "Beverages": 0.34,
+            "Bakery, Cakes & Dairy": 0.18,
+            "Beauty & Hygiene": 0.08,
+            "Cleaning & Household": 0.02,
+            "Foodgrains, Oil & Masala": 0.02,
+        },
+        "rules": [
+            ("Snacks & Branded Foods", "Beverages",              0.45),  # chips + drink
+            ("Bakery, Cakes & Dairy",  "Beverages",              0.25),  # bun + tea
+            ("Snacks & Branded Foods", "Bakery, Cakes & Dairy",  0.20),  # biscuits + milk
+            ("Snacks & Branded Foods", "Snacks & Branded Foods", 0.10),
+        ],
     },
 }
 
 
-def build_rules(store_catalog: pd.DataFrame):
-    """Resolve the category rules against one store's own catalogue."""
+def build_rules(store_catalog: pd.DataFrame, raw_rules=RAW_RULES):
+    """Resolve a shop's pairing rules against its own catalogue."""
     def pool(name):
         return store_catalog[store_catalog["category"] == name]["sku"].tolist()
 
     rules = []
-    for cat_a, cat_b, weight in RAW_RULES:
+    for cat_a, cat_b, weight in raw_rules:
         a, b = pool(cat_a), pool(cat_b)
         if a and b:
             rules.append((a, b, weight))
@@ -98,7 +150,22 @@ def build_rules(store_catalog: pd.DataFrame):
     return [(a, b, w / total) for a, b, w in rules]
 
 
-def pick_pair(rules):
+def price_weights(price_of: dict, category_of: dict, sensitivity: float = 1.0) -> dict:
+    """Relative purchase frequency per SKU: cheaper sells more often, to a
+    degree set by how much of a necessity the category is and how
+    price-sensitive the shop's customers are."""
+    return {
+        sku: max(float(p), 1.0)
+        ** -(ELASTICITY.get(category_of[sku], DEFAULT_ELASTICITY) * sensitivity)
+        for sku, p in price_of.items()
+    }
+
+
+def choose(pool: list[str], weights: dict, rng=random) -> str:
+    return rng.choices(pool, weights=[weights[s] for s in pool], k=1)[0]
+
+
+def pick_pair(rules, weights: dict):
     r = random.random()
     cumulative = 0.0
     chosen = rules[-1]
@@ -108,16 +175,23 @@ def pick_pair(rules):
             chosen = (a_pool, b_pool, weight)
             break
     a_pool, b_pool, _ = chosen
-    sku_a = random.choice(a_pool)
-    sku_b = random.choice(b_pool)
+    sku_a = choose(a_pool, weights)
+    sku_b = choose(b_pool, weights)
     attempts = 0
     while sku_b == sku_a and attempts < 10:
-        sku_b = random.choice(b_pool)
+        sku_b = choose(b_pool, weights)
         attempts += 1
     return sku_a, sku_b
 
 
-def signature_pairs(code: str, rules) -> list[tuple[str, str]]:
+def pick_single(category_mix: dict, pools: dict, weights: dict) -> str:
+    """One-item bill: choose the category by the shop's format, then a product."""
+    cats = [c for c in category_mix if pools.get(c)]
+    cat = random.choices(cats, weights=[category_mix[c] for c in cats], k=1)[0]
+    return choose(pools[cat], weights)
+
+
+def signature_pairs(code: str, rules, weights: dict) -> list[tuple[str, str]]:
     """The shop's handful of habitual pairings.
 
     Drawn from their own seed so they stay the same every time the data is
@@ -132,7 +206,8 @@ def signature_pairs(code: str, rules) -> list[tuple[str, str]]:
     while len(pairs) < SIGNATURE_PAIRS and attempts < 200:
         attempts += 1
         a_pool, b_pool, _ = rng.choice(candidates)
-        a, b = rng.choice(a_pool), rng.choice(b_pool)
+        # Habits form around everyday goods, not the priciest shelf item.
+        a, b = choose(a_pool, weights, rng), choose(b_pool, weights, rng)
         pair = tuple(sorted((a, b)))
         if a != b and pair not in pairs:
             pairs.append(pair)
@@ -180,8 +255,12 @@ def generate_store(code: str, profile, now: datetime) -> pd.DataFrame:
     skus = catalog["sku"].tolist()
     price_of = dict(zip(catalog["sku"], catalog["sell_price"]))
     category_of = dict(zip(catalog["sku"], catalog["category"]))
-    rules = build_rules(catalog)
-    signatures = signature_pairs(code, rules)
+    weights = price_weights(price_of, category_of, profile.get("price_sensitivity", 1.0))
+    sizes = list(profile["basket_sizes"])
+    size_weights = list(profile["basket_sizes"].values())
+    pools = catalog.groupby("category")["sku"].apply(list).to_dict()
+    rules = build_rules(catalog, profile["rules"])
+    signatures = signature_pairs(code, rules, weights)
 
     today = now.date()
     first = today - timedelta(weeks=WEEKS)
@@ -207,13 +286,22 @@ def generate_store(code: str, profile, now: datetime) -> pd.DataFrame:
             ):
                 continue
 
-            if random.random() < profile["pairing_bias"]:
+            size = random.choices(sizes, weights=size_weights, k=1)[0]
+            if size == 1:
+                basket = [pick_single(profile["category_mix"], pools, weights)]
+            else:
+                # A multi-item bill is built around one plausible pairing,
+                # then topped up with other things the household needed.
                 if signatures and random.random() < SIGNATURE_SHARE:
                     basket = list(pick_signature(signatures))
                 else:
-                    basket = list(pick_pair(rules))
-            else:
-                basket = [random.choice(skus)]
+                    basket = list(pick_pair(rules, weights))
+                tries = 0
+                while len(basket) < size and tries < 20:
+                    tries += 1
+                    extra = pick_single(profile["category_mix"], pools, weights)
+                    if extra not in basket:
+                        basket.append(extra)
 
             bill += 1
             for sku in basket:

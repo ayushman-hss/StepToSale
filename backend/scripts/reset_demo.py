@@ -31,7 +31,11 @@ from app.models_pooling import (
 )
 from app.services.pooling.repository import record_event
 from app.services.parser import parse_excel, parse_product_catalog, parse_sales_lines
-from app.services.associations import default_min_support
+from app.services.associations import (
+    DEFAULT_MIN_LIFT,
+    default_min_support,
+    multi_item_baskets,
+)
 from app.services.pooling import to_paise
 from app.services.bundles import generate_suggestions
 
@@ -131,11 +135,11 @@ def load_store(session: Session, code: str) -> None:
     )
     session.commit()
 
-    support = default_min_support(lines["basket_id"].nunique())
+    support = default_min_support(multi_item_baskets(lines))
     stats: dict = {}
     sugg = generate_suggestions(
         session, store.id, lines, MARGIN_FLOOR,
-        min_support_tx=support, min_lift=1.3, stats=stats,
+        min_support_tx=support, min_lift=DEFAULT_MIN_LIFT, stats=stats,
     )
 
     catalog_skus = set(cat["sku"].astype(str))

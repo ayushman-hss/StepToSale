@@ -129,3 +129,28 @@ class TestInsightWording:
         msg = whatsapp_summary(frame(day("2026-09-21", [9, 10])), "Summary for Mon 21 Sep so far")
         assert msg.splitlines()[0] == "📊 *Summary for Mon 21 Sep so far*"
         assert "Daily" not in msg
+
+
+class TestInsightConsistency:
+    """Nothing the insights say may contradict the dashboard headline."""
+
+    def test_best_hour_is_only_named_when_it_beats_the_average(self):
+        # Busy hours convert worse than quiet ones, as they do in real shops.
+        rows = day("2026-09-21", [9], footfall=40, transactions=12)   # 30%
+        rows += day("2026-09-21", [18], footfall=40, transactions=13)  # 32.5%
+        rows += day("2026-09-21", [14], footfall=2, transactions=2)    # 100%, tiny
+        df = frame(rows)
+        texts = " ".join(i["text"] for i in generate_insights(df))
+        overall = 27 / 82
+        assert "your best hour" not in texts, (
+            f"named a best hour although no busy hour beats {overall:.1%}"
+        )
+
+    def test_average_quoted_is_the_headline_rate(self):
+        rows = day("2026-09-21", [9], footfall=100, transactions=10)   # busy, 10%
+        rows += day("2026-09-21", [10], footfall=40, transactions=20)  # 50%
+        rows += day("2026-09-21", [11], footfall=40, transactions=20)
+        df = frame(rows)
+        headline = 50 / 180 * 100
+        warning = next(i["text"] for i in generate_insights(df) if i["kind"] == "warning")
+        assert f"{headline:.1f}% average" in warning

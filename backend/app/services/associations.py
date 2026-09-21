@@ -3,6 +3,21 @@ from typing import List, Dict
 from collections import defaultdict
 
 
+#: Bought together at least twice as often as chance. With realistic basket
+#: sizes (a kirana bill averages 2-3 items) two popular products share a bill
+#: often by coincidence; 1.3 let dozens of those through as "bundles".
+DEFAULT_MIN_LIFT = 2.0
+
+
+def multi_item_baskets(lines: pd.DataFrame, key: str | None = None) -> int:
+    """Bills with two or more distinct products -- the only ones that can
+    contain a pair. Support is judged against these, not all bills, so a
+    shop whose customers mostly buy one thing is not held to a stricter bar
+    for the pairs it does have."""
+    key = key or ("basket_id" if "basket_id" in lines.columns else "transaction_id")
+    return int((lines.groupby(key)["sku"].nunique() >= 2).sum())
+
+
 def default_min_support(total_tx: int) -> int:
     # A flat floor silently wipes out every pair in a small or wide-catalogue
     # dataset: a few hundred baskets spread over ~50 SKUs tops out around 4
@@ -14,7 +29,7 @@ def default_min_support(total_tx: int) -> int:
 def find_co_purchase_pairs(
     lines: pd.DataFrame,
     min_support_tx: int | None = None,
-    min_lift: float = 1.3,
+    min_lift: float = DEFAULT_MIN_LIFT,
 ) -> List[Dict]:
     # transaction_id is only unique *within* one upload -- exports normally
     # restart numbering at T00001 -- so grouping on it alone silently merges
@@ -27,7 +42,7 @@ def find_co_purchase_pairs(
         return []
 
     if min_support_tx is None:
-        min_support_tx = default_min_support(total_tx)
+        min_support_tx = default_min_support(multi_item_baskets(lines, key))
 
     sku_tx_count = defaultdict(int)
     for basket in baskets.values():

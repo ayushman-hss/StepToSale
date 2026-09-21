@@ -1,7 +1,7 @@
 import pandas as pd
 from typing import List
 from sqlmodel import Session, select
-from .associations import find_co_purchase_pairs
+from .associations import DEFAULT_MIN_LIFT, find_co_purchase_pairs
 from .pricing import suggest_bundle_price
 from ..models import Product, BundleSuggestion
 
@@ -12,7 +12,7 @@ def generate_suggestions(
     lines: pd.DataFrame,
     margin_floor_pct: float,
     min_support_tx: int | None = None,
-    min_lift: float = 1.3,
+    min_lift: float = DEFAULT_MIN_LIFT,
     stats: dict | None = None,
 ) -> List[BundleSuggestion]:
     products = {
