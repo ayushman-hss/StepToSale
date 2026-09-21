@@ -5,10 +5,48 @@ import pandas as pd
 
 from ..db import get_session
 from ..models import Store, Upload, HourlyData
-from ..schemas import DashboardResponse, UploadResponse, StoreOut
+from datetime import date, timedelta
+from sqlalchemy import func
+
+from ..schemas import Comparison, DashboardResponse, Period, UploadResponse, StoreOut
 from ..services.parser import parse_excel
 from ..services.insights import generate_insights, whatsapp_summary
-from ..services.metrics import compute_kpis, hourly_series, daily_series, heatmap_series
+from ..services.metrics import (
+    compute_kpis,
+    daily_series,
+    heatmap_series,
+    hourly_series,
+    is_partial,
+)
+
+DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
+
+
+def _short(d: date) -> str:
+    return f"{d:%a} {d.day} {d:%b}"
+
+
+def _period(df: pd.DataFrame, partial_date: Optional[str]) -> Period:
+    """Describe the range actually present in the data, not the one requested.
+
+    "All" has no dates in the request; the label must still say what it covers.
+    """
+    start = date.fromisoformat(df["date"].min())
+    end = date.fromisoformat(df["date"].max())
+    partial = partial_date is not None
+    if start == end:
+        label = _short(end) + (" so far" if partial else "")
+    elif start.month == end.month:
+        label = f"{start.day} to {end.day} {end:%b}"
+    else:
+        label = f"{start.day} {start:%b} to {end.day} {end:%b}"
+    return Period(
+        start=start.isoformat(),
+        end=end.isoformat(),
+        days=int(df["date"].nunique()),
+        partial=partial,
+        label=label,
+    )
 
 
 router = APIRouter(prefix="/api", tags=["dashboard"])
@@ -114,13 +152,86 @@ def get_dashboard(
     if df.empty:
         raise HTTPException(404, "No data for the given filters")
 
+    partial_date = _partial_date(session, store_id, df)
+    period = _period(df, partial_date)
+    title = f"Summary for {period.label}"
+
     return DashboardResponse(
         kpis=compute_kpis(df),
         hourly=hourly_series(df),
         daily=daily_series(df),
         heatmap=heatmap_series(df),
-        insights=generate_insights(df),
-        whatsapp=whatsapp_summary(df),
+        insights=generate_insights(df, partial_date),
+        whatsapp=whatsapp_summary(df, title, partial_date),
+        period=period,
+        data_through=_data_through(session, store_id),
+        compare=_compare(session, store_id, df, period),
+    )
+
+
+def _partial_date(
+    session: Session, store_code: Optional[str], df: pd.DataFrame
+) -> Optional[str]:
+    """The range's final date, if that day is still in progress.
+
+    Judged against the week before it, so it works even when the range is a
+    single day -- which on its own has no "usual closing time" to compare to.
+    """
+    end = df["date"].max()
+    week_before = (date.fromisoformat(end) - timedelta(days=7)).isoformat()
+    context = _load_df(session, store_code, week_before, end)
+    if context.empty or context["date"].max() != end:
+        return None
+    return end if is_partial(context) else None
+
+
+def _data_through(session: Session, store_code: Optional[str]) -> Optional[str]:
+    """Latest date and hour held for this shop filter, regardless of range."""
+    stmt = select(func.max(HourlyData.date)).join(Store, Store.id == HourlyData.store_id)
+    if store_code and store_code != "all":
+        stmt = stmt.where(Store.code == store_code)
+    latest = session.exec(stmt).first()
+    if not latest:
+        return None
+    hstmt = (
+        select(func.max(HourlyData.hour))
+        .join(Store, Store.id == HourlyData.store_id)
+        .where(HourlyData.date == latest)
+    )
+    if store_code and store_code != "all":
+        hstmt = hstmt.where(Store.code == store_code)
+    hour = session.exec(hstmt).first()
+    return f"{latest}T{int(hour):02d}"
+
+
+def _compare(
+    session: Session,
+    store_code: Optional[str],
+    df: pd.DataFrame,
+    period: Period,
+) -> Optional[Comparison]:
+    """For a single day: the same weekday a week earlier, up to the same hour.
+
+    Comparing a half-finished today with all of last Monday would always look
+    like a bad day, so the earlier day is cut at the hour today has reached.
+    """
+    if period.start != period.end:
+        return None
+    day = date.fromisoformat(period.end)
+    through = int(df["hour"].max())
+    prior = day - timedelta(days=7)
+    prev = _load_df(session, store_code, prior.isoformat(), prior.isoformat())
+    if prev.empty:
+        return None
+    prev = prev[prev["hour"] <= through]
+    when = f"by {through}:00" if period.partial else "all day"
+    return Comparison(
+        date=prior.isoformat(),
+        label=f"last {DAY_NAMES[prior.weekday()]} {when}",
+        through_hour=through,
+        footfall=int(prev["footfall"].sum()),
+        transactions=int(prev["transactions"].sum()),
+        sales=float(prev["sales"].sum()),
     )
 
 

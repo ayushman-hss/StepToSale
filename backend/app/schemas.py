@@ -10,10 +10,11 @@ class Kpis(BaseModel):
     sales_per_visitor: float
 
 class HourlyPoint(BaseModel):
+    """An hour of the average day, so counts can be fractional (3.4 visitors)."""
     hour: int
-    footfall: int
+    footfall: float
     sales: float
-    transactions: int
+    transactions: float
     conversion: float
 
 class DailyPoint(BaseModel):
@@ -36,19 +37,42 @@ class StoreOut(BaseModel):
 class HeatmapPoint(BaseModel):
     dow: int
     hour: int
-    footfall: int
+    footfall: float
 
 class Insight(BaseModel):
     kind: str      # warning | opportunity | observation | win
     text: str
 
+class Period(BaseModel):
+    start: str
+    end: str
+    days: int
+    #: The range ends on a day still in progress (today).
+    partial: bool
+    label: str
+
+
+class Comparison(BaseModel):
+    """The same weekday one week earlier, cut at the same hour."""
+    date: str
+    label: str
+    through_hour: int
+    footfall: int
+    transactions: int
+    sales: float
+
+
 class DashboardResponse(BaseModel):
     kpis: Kpis
     hourly: List[HourlyPoint]
     daily: List[DailyPoint]
-    insights: List[Insight] 
+    insights: List[Insight]
     whatsapp: str
     heatmap: List[HeatmapPoint]
+    period: Period
+    #: Latest date and hour with data for this shop filter, e.g. "2026-09-21T14".
+    data_through: Optional[str] = None
+    compare: Optional[Comparison] = None
 
 class ProductIn(BaseModel):
     sku: str

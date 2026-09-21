@@ -1,15 +1,31 @@
 import pandas as pd
 from typing import List, Dict
-from .metrics import hourly_series, peak_hours, compute_kpis
+from .metrics import (
+    hourly_series,
+    compute_kpis,
+    complete_days,
+    daily_totals_by_weekday,
+)
 
 DAY_NAMES = ["Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday", "Sunday"]
 
-def generate_insights(df: pd.DataFrame) -> List[Dict[str, str]]:
+def generate_insights(df: pd.DataFrame, partial_date: str | None = None) -> List[Dict[str, str]]:
     """
     Returns a list of {kind, text} dicts where kind is one of:
     warning | opportunity | observation | win
     """
     insights: List[Dict[str, str]] = []
+
+    # Hourly figures are an average day; say so when the range is longer
+    # than one day, so "22 visitors" is never mistaken for a total.
+    days = int(df["date"].nunique())
+    per_day = "" if days == 1 else " on an average day"
+
+    def n(x: float) -> str:
+        return f"{round(x):,}"
+
+    def people(x: float) -> str:
+        return f"{n(x)} {'person' if round(x) == 1 else 'people'}"
 
     hourly = hourly_series(df)
     non_empty = [h for h in hourly if h["footfall"] > 0]
@@ -21,7 +37,11 @@ def generate_insights(df: pd.DataFrame) -> List[Dict[str, str]]:
 
     peak_ff = max(non_empty, key=lambda h: h["footfall"])
     peak_sales = max(non_empty, key=lambda h: h["sales"])
-    best_conv = max(non_empty, key=lambda h: h["conversion"])
+    # An hour with one visitor who bought is "100% conversion" and means
+    # nothing. Only hours with a real share of the traffic can win.
+    floor = max(3.0, peak_ff["footfall"] * 0.3)
+    substantial = [h for h in non_empty if h["footfall"] >= floor] or [peak_ff]
+    best_conv = max(substantial, key=lambda h: h["conversion"])
 
     # ------------------------------------------------------------------
     # 1. WARNING: busiest hour converts poorly
@@ -30,7 +50,7 @@ def generate_insights(df: pd.DataFrame) -> List[Dict[str, str]]:
         insights.append({
             "kind": "warning",
             "text": (
-                f"{peak_ff['hour']}:00 is your busiest hour ({peak_ff['footfall']} visitors) "
+                f"{peak_ff['hour']}:00 is your busiest hour ({n(peak_ff['footfall'])} visitors{per_day}) "
                 f"but conversion is only {peak_ff['conversion']*100:.1f}% vs "
                 f"{avg_conv*100:.1f}% average. Check staffing or impulse-buy placement."
             ),
@@ -58,7 +78,7 @@ def generate_insights(df: pd.DataFrame) -> List[Dict[str, str]]:
             "kind": "opportunity",
             "text": (
                 f"{best_conv['hour']}:00 converts at {best_conv['conversion']*100:.1f}% "
-                f"— your best hour — but only {best_conv['footfall']} people walk in. "
+                f"— your best hour — but only {people(best_conv['footfall'])} walk in{per_day}. "
                 f"Drive more footfall into this window."
             ),
         })
@@ -84,9 +104,10 @@ def generate_insights(df: pd.DataFrame) -> List[Dict[str, str]]:
     # ------------------------------------------------------------------
     # 5. OPPORTUNITY: quietest day
     # ------------------------------------------------------------------
-    df_dow = df.copy()
-    df_dow["dow"] = pd.to_datetime(df_dow["date"]).dt.dayofweek
-    daily_dow = df_dow.groupby("dow")["footfall"].sum()
+    # Mean per weekday over complete days: sums would favour weekdays that
+    # happen to occur more often in the range, and a half-finished today
+    # would make its weekday look quiet.
+    daily_dow = daily_totals_by_weekday(df, partial_date)
     if len(daily_dow) > 1:
         avg_dow = daily_dow.mean()
         quietest = int(daily_dow.idxmin())
@@ -104,8 +125,9 @@ def generate_insights(df: pd.DataFrame) -> List[Dict[str, str]]:
     # ------------------------------------------------------------------
     # 6. OBSERVATION: sales lag footfall
     # ------------------------------------------------------------------
+    # One day's peak-sales hour is often a single large bill; needs a few days.
     lag = peak_sales["hour"] - peak_ff["hour"]
-    if abs(lag) >= 2:
+    if abs(lag) >= 2 and days >= 3:
         insights.append({
             "kind": "observation",
             "text": (
@@ -120,26 +142,39 @@ def generate_insights(df: pd.DataFrame) -> List[Dict[str, str]]:
     # 7. WIN: basket size
     # ------------------------------------------------------------------
     if k["avg_basket"] > 0:
+        uplift = k["avg_basket"] * 0.1
+        full = complete_days(df, partial_date)
+        full_days = int(full["date"].nunique())
+        if full_days >= 2:
+            # Project from complete days only, scaled to a real week.
+            weekly = float(full["sales"].sum()) / full_days * 7 * 0.1
+            gain = f"roughly ₹{weekly:,.0f} a week"
+        elif full_days == 1:
+            # One day is too thin to project a week from.
+            gain = f"₹{float(full['sales'].sum()) * 0.1:,.0f} on a day like this"
+        else:
+            gain = f"₹{float(df['sales'].sum()) * 0.1:,.0f} on today's bills so far"
         insights.append({
             "kind": "observation",
             "text": (
-                f"Average basket is ₹{k['avg_basket']:.0f}. A ₹{k['avg_basket']*0.1:.0f} "
-                f"increase per bill would add roughly "
-                f"₹{k['total_sales']*0.1:,.0f} to your weekly revenue."
+                f"Average bill is ₹{k['avg_basket']:.0f}. ₹{uplift:.0f} more per bill "
+                f"would add {gain}."
             ),
         })
 
     # Cap at 5, keep order of importance
     return insights[:5]
 
-def whatsapp_summary(df: pd.DataFrame) -> str:
+def whatsapp_summary(
+    df: pd.DataFrame, title: str = "Summary", partial_date: str | None = None
+) -> str:
     k = compute_kpis(df)
     hourly = hourly_series(df)
     non_empty = [h for h in hourly if h["footfall"] > 0]
     peak = max(non_empty, key=lambda h: h["footfall"]) if non_empty else None
 
     lines = [
-        "📊 *Daily Summary*",
+        f"📊 *{title}*",
         "",
         f"👣 Footfall: {k['total_footfall']:,}",
         f"💰 Sales: ₹{k['total_sales']:,.0f}",
@@ -147,9 +182,11 @@ def whatsapp_summary(df: pd.DataFrame) -> str:
         f"🛒 Avg basket: ₹{k['avg_basket']:.0f}",
     ]
     if peak:
-        lines.append(f"⏰ Busiest: {peak['hour']}:00 ({peak['footfall']} visitors)")
+        days = int(df["date"].nunique())
+        note = "" if days == 1 else " a day"
+        lines.append(f"⏰ Busiest: {peak['hour']}:00 ({round(peak['footfall']):,} visitors{note})")
 
-    top = generate_insights(df)[:2]
+    top = generate_insights(df, partial_date)[:2]
     if top:
         lines.append("")
         for i in top:

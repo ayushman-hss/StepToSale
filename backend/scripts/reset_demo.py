@@ -10,6 +10,7 @@ import sys
 from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1]))
+sys.path.insert(0, str(Path(__file__).resolve().parent))
 
 from decimal import Decimal
 
@@ -33,6 +34,9 @@ from app.services.parser import parse_excel, parse_product_catalog, parse_sales_
 from app.services.associations import default_min_support
 from app.services.pooling import to_paise
 from app.services.bundles import generate_suggestions
+
+import generate_bundle_sample
+import generate_sample
 
 BASE = Path(__file__).resolve().parents[1]
 STORES = ["S1", "S2"]
@@ -239,6 +243,11 @@ def load_pools(session: Session) -> None:
 
 
 def main() -> None:
+    # Regenerate first, from one shared clock, so the data always ends now
+    # and "today" stops at the same minute in the sale lines and hourly files.
+    print("Regenerating demo data up to the current hour...")
+    now = generate_bundle_sample.main()
+    generate_sample.main(now)
     init_db()
     with Session(engine) as session:
         print("Resetting demo data...")

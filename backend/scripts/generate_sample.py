@@ -1,36 +1,31 @@
 """Build the hourly footfall file from the per-store sale lines.
 
-Two things were wrong before:
+Transactions and sales are *derived* from the sale lines, which are the record
+of what actually sold, so the dashboard and the bundle engine can never
+disagree. Only footfall is modelled, because footfall is the one number a POS
+genuinely cannot tell you -- it needs a door counter. Each store has its own
+conversion profile, so the two look like different businesses because they are.
 
-1. Footfall, transactions and sales were computed once per hour and then
-   written for BOTH stores, so S1 and S2 had byte-identical data.
-2. This file and sales_lines_S*.xlsx were generated independently, so the
-   dashboard claimed 902 transactions in a week while the bundle engine saw
-   315 of them -- and they were not even in the same year.
-
-Now transactions and sales are derived from the sale lines, which are the
-record of what actually sold. Only footfall is modelled, because footfall is
-the one number a POS genuinely cannot tell you -- it needs a door counter.
-Each store gets its own conversion profile, so the two look like different
-businesses because they are.
+Run after generate_bundle_sample.py (reset_demo.py runs both, in order, with
+one shared clock so today stops at the same minute in both files).
 
     cd backend && python scripts/generate_sample.py
 """
+from __future__ import annotations
+
 import random
-from datetime import date as date_type
+from datetime import date, datetime, timedelta, timezone
 from pathlib import Path
 
 import pandas as pd
 
-random.seed(7)
-
 BASE = Path(__file__).resolve().parents[1]
+IST = timezone(timedelta(hours=5, minutes=30))
 STORES = ["S1", "S2"]
 
 PROFILES = {
     # A neighbourhood kirana: people arrive intending to buy, so most of them
-    # do. It gets busier at the peaks, and conversion dips a little then
-    # because queues put some people off.
+    # do. Conversion dips at the peaks because queues put some people off.
     "S1": {
         "open_hours": range(8, 22),
         "peak_hours": {9, 10, 11, 18, 19, 20},
@@ -50,7 +45,7 @@ PROFILES = {
 }
 
 
-def build(store: str) -> list[dict]:
+def build(store: str, now: datetime) -> list[dict]:
     lines = pd.read_excel(BASE / f"sales_lines_{store}.xlsx")
     lines["date"] = pd.to_datetime(lines["date"]).dt.strftime("%Y-%m-%d")
     lines["value"] = lines["qty"] * lines["unit_price"]
@@ -62,10 +57,20 @@ def build(store: str) -> list[dict]:
     )
 
     profile = PROFILES[store]
+    today = now.date()
+    elapsed = now.minute / 60
     rows: list[dict] = []
-    for day in sorted(lines["date"].unique()):
+
+    # Walk every calendar day, not just days that happen to have sales, so a
+    # quiet morning still shows up as visitors who did not buy.
+    day = date.fromisoformat(lines["date"].min())
+    while day <= today:
+        key_day = day.isoformat()
         for hour in profile["open_hours"]:
-            actual = sold.get((day, hour))
+            if day == today and hour > now.hour:
+                break  # the rest of today has not happened yet
+
+            actual = sold.get((key_day, hour))
             transactions = int(actual["transactions"]) if actual else 0
             sales = float(actual["sales"]) if actual else 0.0
 
@@ -75,45 +80,41 @@ def build(store: str) -> list[dict]:
                     if hour in profile["peak_hours"]
                     else profile["conversion_offpeak"]
                 )
-                conversion = random.uniform(lo, hi)
-                # At least as many visitors as buyers, always.
-                footfall = max(transactions, round(transactions / conversion))
+                footfall = max(transactions, round(transactions / random.uniform(lo, hi)))
             else:
-                # The door still opens in a quiet hour; nobody buys.
                 footfall = random.randint(*profile["idle_footfall"])
+                if day == today and hour == now.hour:
+                    footfall = round(footfall * elapsed)
 
-            rows.append(
-                {
-                    "date": day,
-                    "hour": hour,
-                    "footfall": footfall,
-                    "transactions": transactions,
-                    "sales": round(sales, 2),
-                    "store_id": store,
-                }
-            )
+            rows.append({
+                "date": key_day,
+                "hour": hour,
+                "footfall": footfall,
+                "transactions": transactions,
+                "sales": round(sales, 2),
+                "store_id": store,
+            })
+        day += timedelta(days=1)
     return rows
 
 
-def main() -> None:
+def main(now: datetime | None = None) -> None:
+    now = now or datetime.now(IST)
+    random.seed(7)
     rows: list[dict] = []
     for store in STORES:
-        store_rows = build(store)
+        store_rows = build(store, now)
         rows.extend(store_rows)
-
         ff = sum(r["footfall"] for r in store_rows)
         tx = sum(r["transactions"] for r in store_rows)
         sales = sum(r["sales"] for r in store_rows)
-        first = date_type.fromisoformat(store_rows[0]["date"])
+        days = len({r["date"] for r in store_rows})
         print(
-            f"  {store}: {len(store_rows)} hours, {ff:,} visitors, {tx:,} bills, "
-            f"Rs{sales:,.0f}, {tx / ff * 100:.1f}% bought, "
-            f"Rs{sales / tx:.0f} per bill (week of {first})"
+            f"  {store}: {days} days, {ff:,} visitors, {tx:,} bills, Rs{sales:,.0f}, "
+            f"{tx / ff * 100:.1f}% bought, Rs{sales / tx:.0f} per bill"
         )
-
-    df = pd.DataFrame(rows)
-    df.to_excel(BASE / "sample-data.xlsx", index=False)
-    print(f"Wrote {len(df)} rows to sample-data.xlsx")
+    pd.DataFrame(rows).to_excel(BASE / "sample-data.xlsx", index=False)
+    print(f"  wrote sample-data.xlsx ({len(rows):,} hourly rows, up to {now:%H:%M} today)")
 
 
 if __name__ == "__main__":
