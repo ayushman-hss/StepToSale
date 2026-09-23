@@ -1,4 +1,5 @@
 # Test-only dependencies. Kept separate from requirements.txt until the
 # pooling feature is merged.
 pytest>=8
+pytest-cov
 hypothesis>=6
