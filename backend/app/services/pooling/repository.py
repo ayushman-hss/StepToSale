@@ -7,7 +7,7 @@ validation applies to stored data as to fresh input.
 from __future__ import annotations
 
 import json
-from datetime import datetime
+from datetime import datetime, timezone
 
 from sqlmodel import Session, select
 
@@ -150,7 +150,7 @@ def persist_settlement(
             )
     row.status = PoolStatus.SETTLED.value
     row.strategy = strategy.value
-    row.settled_at = datetime.utcnow()
+    row.settled_at = datetime.now(timezone.utc)
     session.add(row)
     record_event(
         session,
