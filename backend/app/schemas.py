@@ -102,7 +102,7 @@ class BundleSuggestionOut(BaseModel):
     suggested_margin_pct: float
     margin_floor_pct: float
     status: str
-    approved_price: Optional[float]
+    approved_price: Optional[float] = None
 
 
 class BundleActionIn(BaseModel):

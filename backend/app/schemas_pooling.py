@@ -13,7 +13,7 @@ from pydantic import BaseModel
 
 class TierOut(BaseModel):
     min_qty: int
-    max_qty: Optional[int]
+    max_qty: Optional[int] = None
     unit_price: int
     label: str
 
@@ -34,8 +34,8 @@ class PoolProductOut(BaseModel):
     total_qty: int
     pooled_unit_price: int
     tier_label: str
-    units_to_next_tier: Optional[int]
-    next_tier_unit_price: Optional[int]
+    units_to_next_tier: Optional[int] = None
+    next_tier_unit_price: Optional[int] = None
     invoice_total: int
     total_savings: int
     tiers: list[TierOut]
@@ -56,7 +56,7 @@ class PoolOut(BaseModel):
     status: str
     strategy: str
     rotation: int
-    closes_at: Optional[str]
+    closes_at: Optional[str] = None
     invoice_total: int
     total_savings: int
     products: list[PoolProductOut]
