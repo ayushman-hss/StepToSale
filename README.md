@@ -7,7 +7,6 @@
 StepToSale is a retail intelligence platform built around a simple question:
 
 > **Are you above the line?**
-
 For a small shop, that question can mean very different things:
 
 - Are enough of the people entering the shop actually buying?
