@@ -14,7 +14,8 @@ interface Props {
 const rupees = (n: number) => `₹${n.toLocaleString('en-IN', { maximumFractionDigits: 0 })}`;
 
 /** Product names arrive as "Butter - Pasteurised"; a spaced dash is chrome. */
-const clean = (name: string) => name.replace(/\s+-\s+/g, ', ');
+const clean = (name: string) =>
+  name.replace(/\s+/g, ' ').replace(/ - /g, ', ');
 
 export function BundleCard({ bundle, onApprove, onReject }: Props) {
   const [editing, setEditing] = useState(false);

@@ -29,7 +29,7 @@ export function KpiCards({
   const floor = Math.max(3, peak * 0.3);
   const busy = hourly.filter((h) => h.footfall >= floor);
   const top = busy.length
-    ? busy.reduce((a, b) => (b.conversion > a.conversion ? b : a))
+    ? busy.reduce((a, b) => (b.conversion > a.conversion ? b : a), busy[0])
     : null;
   // Only a target if it genuinely beats today's rate -- busy hours often
   // convert worst, and a "target" below where you already are is no target.
