@@ -166,7 +166,7 @@ def choose(pool: list[str], weights: dict, rng=random) -> str:
 
 
 def pick_pair(rules, weights: dict):
-    r = random.random()
+    r = random.random()                     # NOSONAR -- sample data generation only, not security-sensitive
     cumulative = 0.0
     chosen = rules[-1]
     for a_pool, b_pool, weight in rules:
@@ -187,7 +187,7 @@ def pick_pair(rules, weights: dict):
 def pick_single(category_mix: dict, pools: dict, weights: dict) -> str:
     """One-item bill: choose the category by the shop's format, then a product."""
     cats = [c for c in category_mix if pools.get(c)]
-    cat = random.choices(cats, weights=[category_mix[c] for c in cats], k=1)[0]
+    cat = random.choices(cats, weights=[category_mix[c] for c in cats], k=1)[0]     # NOSONAR -- sample data generation only, not security-sensitive
     return choose(pools[cat], weights)
 
 
@@ -217,7 +217,7 @@ def signature_pairs(code: str, rules, weights: dict) -> list[tuple[str, str]]:
 def pick_signature(pairs: list[tuple[str, str]]) -> tuple[str, str]:
     """Zipf-like: the first pairing is the strongest, each next one weaker."""
     weights = [1 / (i + 1) for i in range(len(pairs))]
-    return random.choices(pairs, weights=weights, k=1)[0]
+    return random.choices(pairs, weights=weights, k=1)[0]       # NOSONAR -- sample data generation only, not security-sensitive
 
 
 def pick_hour(profile) -> int:
